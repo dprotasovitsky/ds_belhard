@@ -17,6 +17,7 @@ def evaluate_model(model, X_test, y_test, model_name):
   mse = np.mean((y_test_exp - y_pred_exp) ** 2)
   rmse = np.sqrt(mse)
   r2 = model.score(X_test, y_test)
+
   print(f"\nОценка модели {model_name}:")
   print(f"RMSE: {rmse:.2f}")
   print(f"R2: {r2:.4f}")
@@ -50,30 +51,48 @@ def evaluate_model(model, X_test, y_test, model_name):
   plt.xlabel('Ошибка')
   plt.grid(True)
 
-  # 4. Важность признаков
+  # 4. Важность признаков (универсальный метод)
   plt.subplot(224)
-  if 'Linear' in model_name or 'Ridge' in model_name:
-    # Для линейных моделей показываем коэффициенты
-    if hasattr(model.named_steps['regressor'], 'coef_'):
-        coefs = model.named_steps['regressor'].coef_
-        feature_names = model.named_steps['preprocessor'].get_feature_names_out()
-        # Отбираем топ-10 самых значимых коэффициентов
-        sorted_idx = np.argsort(np.abs(coefs))
-        top_features = [feature_names[i] for i in sorted_idx[-10:]]
-        top_coefs = coefs[sorted_idx[-10:]]
-        plt.barh(top_features, top_coefs)
-        plt.title('Топ-10 коэффициентов линейной модели')
+  try:
+    # Попытка получить важность признаков для модели
+    if hasattr(model, 'feature_importances_'):
+      # Для отдельных моделей (RandomForest, GradientBoosting)
+      importances = model.feature_importances_
+      feature_names = X_test.columns
     elif hasattr(model.named_steps['regressor'], 'feature_importances_'):
-        # Для ансамблевых моделей показываем важность признаков
-        feature_importances = model.named_steps['regressor'].feature_importances_
-        feature_names = model.named_steps['preprocessor'].get_feature_names_out()
-        sorted_idx = np.argsort(feature_importances)
-        plt.barh(
-        [feature_names[i] for i in sorted_idx[-10:]],
-        feature_importances[sorted_idx[-10:]]
-        )
-        plt.title('Топ-10 важных признаков')
-        plt.tight_layout()
-        plt.savefig(f'{model_name}_evaluation.png', dpi=300)
-        plt.show()
-    return r2
+      # Для моделей в пайплайне
+      importances = model.named_steps['regressor'].feature_importances_
+      feature_names = model.named_steps['preprocessor'].get_feature_names_out()
+    else:
+      # Для моделей без явной важности признаков
+      # Используем permutation importance
+      result = permutation_importance(
+      model, X_test, y_test, n_repeats=10, random_state=RANDOM_STATE
+      )
+      importances = result.importances_mean
+      feature_names = X_test.columns
+      # Для ансамблей - дополнительная обработка
+      if 'Voting' in model_name or 'Stacking' in model_name:
+        # Вычисляем среднюю важность по базовым моделям
+        base_importances = []
+        for estimator in model.estimators_:
+          if hasattr(estimator, 'feature_importances_'):
+            base_importances.append(estimator.feature_importances_)
+        if base_importances:
+          importances = np.mean(base_importances, axis=0)
+    # Сортируем признаки по важности
+    sorted_idx = np.argsort(importances)
+    top_features = [feature_names[i] for i in sorted_idx[-10:]]
+    top_importances = importances[sorted_idx[-10:]]
+    # Построение графика
+    plt.barh(top_features, top_importances)
+    plt.title('Топ-10 важных признаков' if len(top_features) == 10 else
+    f'Топ-{len(top_features)} важных признаков')
+    plt.xlabel('Важность')
+  except Exception as e:
+    print(f"Не удалось построить важность признаков: {str(e)}")
+    plt.title('Важность признаков недоступна')
+    plt.tight_layout()
+    plt.savefig(f'{model_name}_evaluation.png', dpi=300)
+    plt.show()
+  return r2
