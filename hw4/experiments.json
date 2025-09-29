@@ -1,0 +1,10 @@
+[
+  {
+    "best_model": "Linear SVM",
+    "best_f1_score": 0.7463791438686836,
+    "best_accuracy": 0.7357921207041073,
+    "total_models_trained": 6,
+    "training_time_total": 324.6157326698303,
+    "timestamp": "2025-09-28T19:05:11.205763"
+  }
+]
